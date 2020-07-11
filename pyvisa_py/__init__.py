@@ -6,9 +6,11 @@
 :license: MIT, see LICENSE for more details.
 
 """
-try:
+import sys
+
+if sys.version_info >= (3, 8):
     from importlib.metadata import version, PackageNotFoundError
-except ImportError:
+else:
     from importlib_metadata import version, PackageNotFoundError  # type: ignore
 
 __version__ = "unknown"
