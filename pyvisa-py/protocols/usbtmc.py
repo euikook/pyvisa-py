@@ -36,7 +36,6 @@ class MsgID(enum.IntEnum):
     vendor_specific_out = 126
     request_vendor_specific_in = 127
     vendor_specific_in = 127
-    trigger = 128  # for USB488
 
 
 class Request(enum.IntEnum):
@@ -48,6 +47,10 @@ class Request(enum.IntEnum):
     check_clear_status = 6
     get_capabilities = 7
     indicator_pulse = 64
+
+    # USB488
+    trigger = 128
+    ren_control = 160
 
 
 class UsbTmcStatus(enum.IntEnum):
@@ -293,7 +296,10 @@ class USBTMC(USBRaw):
 
         time.sleep(0.01)
 
+        self._cap_usb488_states = False
         self._get_capabilities()
+
+        self._enable_remote_control()
 
         self._btag = 0
 
@@ -301,8 +307,22 @@ class USBTMC(USBRaw):
             msg = "TMC device must have both Bulk-In and Bulk-out endpoints."
             raise ValueError(msg)
 
-    def _get_capabilities(self):
+    def _enable_remote_control(self):
+        if not self._cap_usb488_states:
+            return
+
         self.usb_dev.ctrl_transfer(
+            usb.util.build_request_type(usb.util.CTRL_IN,
+                                        usb.util.CTRL_TYPE_CLASS,
+                                        usb.util.CTRL_RECIPIENT_INTERFACE),
+            Request.ren_control,
+            1,
+            self.usb_intf.index,
+            1,
+            timeout=self.timeout)
+
+    def _get_capabilities(self):
+        c = self.usb_dev.ctrl_transfer(
             usb.util.build_request_type(
                 usb.util.CTRL_IN,
                 usb.util.CTRL_TYPE_CLASS,
@@ -314,6 +334,13 @@ class USBTMC(USBRaw):
             0x0018,
             timeout=self.timeout,
         )
+
+        usb488_capabilities = c[0xe]
+        if usb488_capabilities & 6:
+            # bit #2: The interface is a 488.2 USB488 interface.
+            # bit #1: The interface accepts REN_CONTROL, GO_TO_LOCAL,
+            #         and LOCAL_LOCKOUT requests.
+            self._cap_usb488_states = True
 
     def _find_interface(self, dev, setting):
         interfaces = find_interfaces(dev, bInterfaceClass=0xFE, bInterfaceSubClass=3)
